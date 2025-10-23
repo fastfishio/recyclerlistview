@@ -1,5 +1,6 @@
 import * as React from "react";
 import {
+    I18nManager,
     LayoutChangeEvent,
     NativeScrollEvent,
     NativeSyntheticEvent,
@@ -28,6 +29,7 @@ export default class ScrollComponent extends BaseScrollComponent {
     private _offset: number;
     private _isSizeChangedCalledOnce: boolean;
     private _scrollViewRef: ScrollView | null = null;
+    private _contentSize: { width: number; height: number } = { width: 0, height: 0 };
 
     constructor(args: ScrollComponentProps) {
         super(args);
@@ -39,7 +41,17 @@ export default class ScrollComponent extends BaseScrollComponent {
 
     public scrollTo(x: number, y: number, isAnimated: boolean): void {
         if (this._scrollViewRef) {
-            this._scrollViewRef.scrollTo({ x, y, animated: isAnimated });
+            let scrollX = x;
+            const scrollY = y;
+
+            // Handle RTL for horizontal scrolling
+            if (this.props.isHorizontal && this._isRTL()) {
+                // In RTL, we need to invert the scroll position
+                const maxScrollX = this._contentSize.width - this._width;
+                scrollX = maxScrollX - x;
+            }
+
+            this._scrollViewRef.scrollTo({ x: scrollX, y: scrollY, animated: isAnimated });
         }
     }
 
@@ -79,6 +91,11 @@ export default class ScrollComponent extends BaseScrollComponent {
         //     scrollThrottle,
         //     ...props,
         // } = this.props;
+        // Determine flex direction based on RTL and horizontal settings
+        const flexDirection = this.props.isHorizontal
+            ? (this._isRTL() ? "row-reverse" : "row")
+            : "column";
+
         return (
             <Scroller ref={this._getScrollViewRef}
                 removeClippedSubviews={false}
@@ -86,8 +103,9 @@ export default class ScrollComponent extends BaseScrollComponent {
                 {...this.props}
                 horizontal={this.props.isHorizontal}
                 onScroll={this._onScroll}
+                onContentSizeChange={this._onContentSizeChange}
                 onLayout={(!this._isSizeChangedCalledOnce || this.props.canChangeSize) ? this._onLayout : this.props.onLayout}>
-                <View style={{ flexDirection: this.props.isHorizontal ? "row" : "column" }}>
+                <View style={{ flexDirection }}>
                     {renderContentContainer(contentContainerProps, this.props.children)}
                     {this.props.renderFooter ? this.props.renderFooter() : null}
                 </View>
@@ -105,11 +123,31 @@ export default class ScrollComponent extends BaseScrollComponent {
 
     private _getScrollViewRef = (scrollView: any) => { this._scrollViewRef = scrollView as (ScrollView | null); };
 
+    private _isRTL(): boolean {
+        return I18nManager.isRTL;
+    }
+
+    private _onContentSizeChange = (contentWidth: number, contentHeight: number): void => {
+        this._contentSize = { width: contentWidth, height: contentHeight };
+    }
+
     private _onScroll = (event?: NativeSyntheticEvent<NativeScrollEvent>): void => {
         if (event) {
             const contentOffset = event.nativeEvent.contentOffset;
-            this._offset = this.props.isHorizontal ? contentOffset.x : contentOffset.y;
-            this.props.onScroll(contentOffset.x, contentOffset.y, event);
+            let offsetX = contentOffset.x;
+            const offsetY = contentOffset.y;
+
+            // Handle RTL for horizontal scrolling
+            if (this.props.isHorizontal && this._isRTL()) {
+                // In RTL, we need to invert the scroll offset
+                const contentSize = event.nativeEvent.contentSize;
+                const layoutMeasurement = event.nativeEvent.layoutMeasurement;
+                const maxScrollX = contentSize.width - layoutMeasurement.width;
+                offsetX = maxScrollX - contentOffset.x;
+            }
+
+            this._offset = this.props.isHorizontal ? offsetX : offsetY;
+            this.props.onScroll(offsetX, offsetY, event);
         }
     }
 

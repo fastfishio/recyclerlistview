@@ -3,7 +3,7 @@ import { Dimension, BaseLayoutProvider } from "./dependencies/LayoutProvider";
 import CustomError from "./exceptions/CustomError";
 import RecyclerListViewExceptions from "./exceptions/RecyclerListViewExceptions";
 import { Point, LayoutManager } from "./layoutmanager/LayoutManager";
-import ViewabilityTracker, { TOnItemStatusChanged, WindowCorrection } from "./ViewabilityTracker";
+import ViewabilityTracker, { TOnItemStatusChanged, TOnItemStatusChangedWithPercentage, WindowCorrection } from "./ViewabilityTracker";
 import { ObjectUtil, Default } from "ts-object-utils";
 import TSCast from "../utils/TSCast";
 import { BaseDataProvider } from "./dependencies/DataProvider";
@@ -33,6 +33,7 @@ export type StableIdProvider = (index: number) => string;
 export default class VirtualRenderer {
 
     private onVisibleItemsChanged: TOnItemStatusChanged | null;
+    private onVisibleItemsChangedWithPercentage: TOnItemStatusChangedWithPercentage | null;
 
     private _scrollOnNextUpdate: (point: Point) => void;
     private _stableIdToRenderKeyMap: { [key: string]: StableIdMapItem | undefined };
@@ -78,6 +79,7 @@ export default class VirtualRenderer {
         this._startKey = 0;
 
         this.onVisibleItemsChanged = null;
+        this.onVisibleItemsChangedWithPercentage = null;
     }
 
     public getLayoutDimension(): Dimension {
@@ -112,11 +114,23 @@ export default class VirtualRenderer {
         this.onVisibleItemsChanged = callback;
     }
 
+    public attachVisibleItemsListenerWithPercentage(callback: TOnItemStatusChangedWithPercentage): void {
+        this.onVisibleItemsChangedWithPercentage = callback;
+    }
+
     public removeVisibleItemsListener(): void {
         this.onVisibleItemsChanged = null;
 
         if (this._viewabilityTracker) {
             this._viewabilityTracker.onVisibleRowsChanged = null;
+        }
+    }
+
+    public removeVisibleItemsListenerWithPercentage(): void {
+        this.onVisibleItemsChangedWithPercentage = null;
+
+        if (this._viewabilityTracker) {
+            this._viewabilityTracker.onVisibleRowsChangedWithPercentage = null;
         }
     }
 
@@ -358,6 +372,9 @@ export default class VirtualRenderer {
             if (this.onVisibleItemsChanged) {
                 this._viewabilityTracker.onVisibleRowsChanged = this._onVisibleItemsChanged;
             }
+            if (this.onVisibleItemsChangedWithPercentage) {
+                this._viewabilityTracker.onVisibleRowsChangedWithPercentage = this._onVisibleItemsChangedWithPercentage;
+            }
             this._viewabilityTracker.setLayouts(this._layoutManager.getLayouts(), this._params.isHorizontal ?
                 this._layoutManager.getContentDimension().width :
                 this._layoutManager.getContentDimension().height);
@@ -373,6 +390,12 @@ export default class VirtualRenderer {
     private _onVisibleItemsChanged = (all: number[], now: number[], notNow: number[]): void => {
         if (this.onVisibleItemsChanged) {
             this.onVisibleItemsChanged(all, now, notNow);
+        }
+    }
+
+    private _onVisibleItemsChangedWithPercentage = (all: Array<{index: number; visibilityPercentage: number; }>): void => {
+        if (this.onVisibleItemsChangedWithPercentage) {
+            this.onVisibleItemsChangedWithPercentage(all);
         }
     }
 

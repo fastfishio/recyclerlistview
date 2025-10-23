@@ -21,9 +21,12 @@ export interface WindowCorrection {
 
 export type TOnItemStatusChanged = ((all: number[], now: number[], notNow: number[]) => void);
 
+export type TOnItemStatusChangedWithPercentage = ((all: Array<{index: number; visibilityPercentage: number; }>) => void);
+
 export default class ViewabilityTracker {
     public onVisibleRowsChanged: TOnItemStatusChanged | null;
     public onEngagedRowsChanged: TOnItemStatusChanged | null;
+    public onVisibleRowsChangedWithPercentage: TOnItemStatusChangedWithPercentage | null;
 
     private _currentOffset: number;
     private _maxOffset: number;
@@ -55,6 +58,7 @@ export default class ViewabilityTracker {
 
         this.onVisibleRowsChanged = null;
         this.onEngagedRowsChanged = null;
+        this.onVisibleRowsChangedWithPercentage = null;
 
         this._relevantDim = { start: 0, end: 0 };
         this._defaultCorrection = { startCorrection: 0, endCorrection: 0, windowShift: 0 };
@@ -149,6 +153,34 @@ export default class ViewabilityTracker {
        this._actualOffset = actualOffset;
     }
 
+    private _calculateVisibilityPercentage(itemRect: Layout): number {
+        // Calculate the percentage of the item's area that is visible within the visible window
+        let visibleStart: number;
+        let visibleEnd: number;
+        let itemStart: number;
+        let itemEnd: number;
+        if (this._isHorizontal) {
+            itemStart = itemRect.x;
+            itemEnd = itemRect.x + itemRect.width;
+            visibleStart = Math.max(itemStart, this._visibleWindow.start);
+            visibleEnd = Math.min(itemEnd, this._visibleWindow.end);
+        } else {
+            itemStart = itemRect.y;
+            itemEnd = itemRect.y + itemRect.height;
+            visibleStart = Math.max(itemStart, this._visibleWindow.start);
+            visibleEnd = Math.min(itemEnd, this._visibleWindow.end);
+        }
+
+        const visibleLength = Math.max(0, visibleEnd - visibleStart);
+        const totalLength = this._isHorizontal ? itemRect.width : itemRect.height;
+
+        if (totalLength === 0) {
+            return 0;
+        }
+
+        return (visibleLength / totalLength) * 100;
+    }
+
     private _findFirstVisibleIndexOptimally(): number {
         let firstVisibleIndex = 0;
 
@@ -167,6 +199,15 @@ export default class ViewabilityTracker {
         this._fitIndexes(newVisibleItems, newEngagedItems, startIndex, true);
         this._fitIndexes(newVisibleItems, newEngagedItems, startIndex + 1, false);
         this._diffUpdateOriginalIndexesAndRaiseEvents(newVisibleItems, newEngagedItems);
+        // calculate visibility percentage for each visible index
+        if (this.onVisibleRowsChangedWithPercentage) {
+            const visibleIndexesWithPercentage = this._visibleIndexes.map((index) => {
+                const itemRect = this._layouts[index];
+                const visibilityPercentage = this._calculateVisibilityPercentage(itemRect);
+                return { index, visibilityPercentage };
+            });
+            this.onVisibleRowsChangedWithPercentage(visibleIndexesWithPercentage);
+        }
     }
 
     private _doInitialFit(offset: number, windowCorrection: WindowCorrection): void {

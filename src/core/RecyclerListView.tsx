@@ -32,7 +32,7 @@ import { Constants } from "./constants/Constants";
 import { Messages } from "./constants/Messages";
 import BaseScrollComponent from "./scrollcomponent/BaseScrollComponent";
 import BaseScrollView, { ScrollEvent, ScrollViewDefaultProps } from "./scrollcomponent/BaseScrollView";
-import { TOnItemStatusChanged, WindowCorrection } from "./ViewabilityTracker";
+import { TOnItemStatusChanged, TOnItemStatusChangedWithPercentage, WindowCorrection } from "./ViewabilityTracker";
 import VirtualRenderer, { RenderStack, RenderStackItem, RenderStackParams } from "./VirtualRenderer";
 import ItemAnimator, { BaseItemAnimator } from "./ItemAnimator";
 import { DebugHandlers } from "..";
@@ -91,6 +91,7 @@ export interface RecyclerListViewProps {
     onEndReachedThresholdRelative?: number;
     onVisibleIndexesChanged?: TOnItemStatusChanged;
     onVisibleIndicesChanged?: TOnItemStatusChanged;
+    onVisibleIndicesChangedWithPercentage?: TOnItemStatusChangedWithPercentage;
     renderFooter?: () => JSX.Element | JSX.Element[] | null;
     externalScrollView?: { new(props: ScrollViewDefaultProps): BaseScrollView };
     layoutSize?: Dimension;
@@ -114,6 +115,7 @@ export interface RecyclerListViewProps {
     applyWindowCorrection?: (offsetX: number, offsetY: number, windowCorrection: WindowCorrection) => void;
     onItemLayout?: (index: number) => void;
     windowCorrectionConfig?: { value?: WindowCorrection, applyToInitialOffset?: boolean, applyToItemScroll?: boolean };
+    isRTL?: boolean;
 
     //This can lead to inconsistent behavior. Use with caution.
     //If set to true, recyclerlistview will not measure itself if scrollview mounts with zero height or width.
@@ -223,11 +225,18 @@ export default class RecyclerListView<P extends RecyclerListViewProps, S extends
         if (!newProps.onVisibleIndicesChanged) {
             this._virtualRenderer.removeVisibleItemsListener();
         }
+        if (!newProps.onVisibleIndicesChangedWithPercentage) {
+            this._virtualRenderer.removeVisibleItemsListenerWithPercentage();
+        }
         if (newProps.onVisibleIndexesChanged) {
             throw new CustomError(RecyclerListViewExceptions.usingOldVisibleIndexesChangedParam);
         }
         if (newProps.onVisibleIndicesChanged) {
             this._virtualRenderer.attachVisibleItemsListener(newProps.onVisibleIndicesChanged!);
+        }
+
+        if (newProps.onVisibleIndicesChangedWithPercentage) {
+            this._virtualRenderer.attachVisibleItemsListenerWithPercentage(newProps.onVisibleIndicesChangedWithPercentage!);
         }
     }
 
@@ -635,6 +644,9 @@ export default class RecyclerListView<P extends RecyclerListViewProps, S extends
         if (props.onVisibleIndicesChanged) {
             this._virtualRenderer.attachVisibleItemsListener(props.onVisibleIndicesChanged!);
         }
+        if (props.onVisibleIndicesChangedWithPercentage) {
+            this._virtualRenderer.attachVisibleItemsListenerWithPercentage(props.onVisibleIndicesChangedWithPercentage!);
+        }
         this._params = {
             initialOffset: this._initialOffset ? this._initialOffset : props.initialOffset,
             initialRenderIndex: props.initialRenderIndex,
@@ -663,6 +675,23 @@ export default class RecyclerListView<P extends RecyclerListViewProps, S extends
     private _getWindowCorrection(offsetX: number, offsetY: number, props: RecyclerListViewProps): WindowCorrection {
         return (props.applyWindowCorrection && props.applyWindowCorrection(offsetX, offsetY, this._windowCorrectionConfig.value))
                 || this._windowCorrectionConfig.value;
+    }
+
+    private _isRTL(): boolean {
+        if (this.props.isRTL !== undefined) {
+            return this.props.isRTL;
+        }
+
+        // For React Native, use I18nManager
+        if (typeof require !== "undefined") {
+            try {
+                const { I18nManager } = require("react-native");
+                return I18nManager.isRTL;
+            } catch (e) {
+                return false;
+            }
+        }
+        return false;
     }
 
     private _assertDependencyPresence(props: RecyclerListViewProps): void {
@@ -852,6 +881,9 @@ RecyclerListView.propTypes = {
 
     //Provides visible index, helpful in sending impression events etc, onVisibleIndicesChanged(all, now, notNow)
     onVisibleIndicesChanged: PropTypes.func,
+
+    //Provides visible index with visibility percentage, helpful in sending impression events etc, onVisibleIndicesChangedWithPercentage(all)
+    onVisibleIndicesChangedWithPercentage: PropTypes.func,
 
     //Provide this method if you want to render a footer. Helpful in showing a loader while doing incremental loads.
     renderFooter: PropTypes.func,
